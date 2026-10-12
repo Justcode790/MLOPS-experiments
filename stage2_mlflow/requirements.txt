@@ -1,0 +1,6 @@
+numpy
+pandas>=2.0
+scikit-learn>=1.4,<2
+joblib
+matplotlib
+mlflow>=3.0

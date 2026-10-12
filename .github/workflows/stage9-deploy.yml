@@ -1,0 +1,104 @@
+name: "Stage 9 - Full CI/CD (train, test, containerize, deploy)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["stage9_deployment/**", "data/**", ".github/workflows/stage9-deploy.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["stage9_deployment/**", "data/**"]
+
+permissions:
+  contents: read
+  packages: write
+
+defaults:
+  run:
+    working-directory: stage9_deployment
+
+jobs:
+  train-test-containerize-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train Titanic model
+        run: python train_model.py
+
+      - name: Check ML quality gate
+        run: python quality_gate.py
+
+      - name: Run automated tests
+        run: python -m unittest discover -v
+
+      - name: Build Docker image
+        run: docker build -t titanic-survival-ml:${{ github.sha }} .
+
+      - name: Start Docker container
+        run: |
+          docker run -d \
+            --name titanic-survival-ml-container \
+            -p 5000:5000 \
+            titanic-survival-ml:${{ github.sha }}
+
+      - name: Wait for application to become ready
+        run: |
+          for i in {1..15}; do
+            if curl --fail --silent http://localhost:5000/health; then
+              echo ""
+              echo "Application is ready."
+              exit 0
+            fi
+            echo "Waiting for application... attempt $i"
+            sleep 2
+          done
+          echo "Application did not become ready."
+          docker logs titanic-survival-ml-container
+          exit 1
+
+      - name: Test prediction endpoint
+        run: |
+          response=$(curl --fail --silent --show-error \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"pclass":1,"sex":"female","age":28,"sibsp":0,"parch":0,"fare":100,"embarked":"C"}' \
+            http://localhost:5000/predict)
+          echo "Prediction response: $response"
+          echo "$response" | grep -q '"prediction"'
+
+      - name: Show Docker container logs
+        if: always()
+        run: docker logs titanic-survival-ml-container || true
+
+      - name: Stop and remove Docker container
+        if: always()
+        run: docker rm -f titanic-survival-ml-container || true
+
+
+      # ---------- DEPLOYMENT: only after every check above has passed ----------
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Tag and push image to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=ghcr.io/$OWNER/titanic-survival-ml
+          docker tag titanic-survival-ml:${{ github.sha }} $IMAGE:${{ github.sha }}
+          docker tag titanic-survival-ml:${{ github.sha }} $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+          echo "Published $IMAGE:latest" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,5 @@
+numpy
+pandas>=2.0
+scikit-learn>=1.4,<2
+joblib
+flask>=3.0

@@ -1,0 +1,58 @@
+name: Stage 7 - Docker-ready release candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["stage7_docker/**", "data/**", ".github/workflows/stage7-docker-release.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["stage7_docker/**", "data/**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: stage7_docker
+
+jobs:
+  train-test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train Titanic model
+        run: python train_model.py
+
+      - name: Check ML quality gate
+        run: python quality_gate.py
+
+      - name: Run all tests
+        run: python -m unittest discover -v
+
+      - name: Prepare release candidate (includes Docker files)
+        run: |
+          mkdir -p release_candidate
+          cp app.py titanic_model.pkl metrics.json requirements.txt Dockerfile .dockerignore release_candidate/
+          printf "Titanic Survival Prediction ML Application\nBuild: docker build -t titanic-survival-ml:1.0 .\nRun: docker run -d -p 5000:5000 titanic-survival-ml:1.0\n" > release_candidate/DEPLOYMENT.txt
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: titanic-ml-release
+          path: stage7_docker/release_candidate/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

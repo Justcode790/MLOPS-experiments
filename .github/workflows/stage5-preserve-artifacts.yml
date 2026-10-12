@@ -1,0 +1,54 @@
+name: Stage 5 - Preserve ML Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["stage5_artifacts/**", "data/**", ".github/workflows/stage5-preserve-artifacts.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["stage5_artifacts/**", "data/**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: stage5_artifacts
+
+jobs:
+  train-test-preserve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train Titanic model
+        run: python train_model.py
+
+      - name: Check ML quality gate
+        run: python quality_gate.py
+
+      - name: Run automated ML tests
+        run: python -m unittest discover -v
+
+      - name: Upload validated ML artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: titanic-ml-artifacts
+          path: |
+            stage5_artifacts/titanic_model.pkl
+            stage5_artifacts/metrics.json
+            stage5_artifacts/test_predictions.csv
+          if-no-files-found: error
+          retention-days: 7

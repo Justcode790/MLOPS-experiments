@@ -1,0 +1,12 @@
+# Local "deployment" of the validated image.
+#   Build + run from this folder :  python train_model.py && docker compose up -d --build
+#   Run the image published by CI :  IMAGE=ghcr.io/<owner>/titanic-survival-ml:latest docker compose pull
+#                                    IMAGE=ghcr.io/<owner>/titanic-survival-ml:latest docker compose up -d
+services:
+  titanic-api:
+    image: ${IMAGE:-titanic-survival-ml:local}
+    build: .
+    container_name: titanic-survival-api
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

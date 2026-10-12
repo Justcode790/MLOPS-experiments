@@ -1,0 +1,49 @@
+name: Stage 4 - ML CI + Quality Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_accuracy:
+        description: "Quality-gate minimum accuracy (use 0.95 to demo a FAILED gate)"
+        default: "0.75"
+  push:
+    branches: [main]
+    paths: ["stage4_ci_quality_gate/**", "data/**", ".github/workflows/stage4-ci-quality-gate.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["stage4_ci_quality_gate/**", "data/**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: stage4_ci_quality_gate
+
+jobs:
+  train-and-test:
+    runs-on: ubuntu-latest
+    env:
+      MIN_ACCURACY: ${{ inputs.min_accuracy || '0.75' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train Titanic model
+        run: python train_model.py
+
+      - name: Check ML quality gate
+        run: python quality_gate.py
+
+      - name: Run automated ML tests
+        run: python -m unittest discover -v
